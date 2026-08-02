@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+<meta name="theme-color" content="#e8a520" />
+<title>BreadBiz - Delivery Manager</title>
+<link rel="manifest" href="manifest.json" />
+<link rel="icon" href="icons/icon-192.png" />
+<link rel="apple-touch-icon" href="icons/icon-192.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Sora:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body,#root{height:100%;background:#0c0b08;}
+  ::-webkit-scrollbar{width:3px;}
+  ::-webkit-scrollbar-thumb{background:#272318;border-radius:4px;}
+  input[type=range]{accent-color:#e8a520;width:100%;cursor:pointer;}
+  @keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}
+</style>
+</head>
+<body>
+<div id="root"></div>
+
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script crossorigin src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
+
+<script type="text/babel" data-presets="react">
+const { useState, useEffect } = React;
+
+const T = {
+  bg: "#0c0b08", surface: "#141210", card: "#1b1814",
+  border: "#272318", borderHi: "#3a3326",
+  gold: "#e8a520", goldDim: "#a87510", goldSoft: "#e8a52020",
+  cream: "#f0e5cc", creamDim: "#9a8a72", muted: "#60503e",
+  green: "#4db876", greenSoft: "#4db87620",
+  red: "#d95555", redSoft: "#d9555520",
+  blue: "#5fa0e8", blueSoft: "#5fa0e820",
+};
+
+const fmt = (n) => {
+  if (n >= 10000000) return "₹" + (n / 10000000).toFixed(2) + " Cr";
+  if (n >= 100000)   return "₹" + (n / 100000).toFixed(2) + " L";
+  if (n >= 1000)     return "₹" + (n / 1000).toFixed(1) + "K";
+  return "₹" + Math.round(n).toLocaleString();
+};
+
+const BREAD_PRICE  = 70;
+const MARGIN       = 0.30;
+const BOY_REV      = 3000;
+const HOMES_PER_BOY = 21;
+const SALARY_INIT  = 5000;
+const SALARY_LATER = 9300;
+const NET_PER_BOY  = BOY_REV * MARGIN * 30 - SALARY_INIT;
+
+const initBoys = [
+  { id: 1, name: "Arif Khan",   area: "Sector A", morning: 1500, evening: 1500, active: true,  completedM: true,  completedE: false },
+  { id: 2, name: "Bilal Ahmad", area: "Sector B", morning: 1400, evening: 1350, active: true,  completedM: true,  completedE: true  },
+  { id: 3, name: "Riyaz Mir",   area: "Sector C", morning: 1600, evening: 1400, active: true,  completedM: false, completedE: false },
+  { id: 4, name: "Sameer Lone", area: "Sector D", morning: 1100, evening: 1000, active: false, completedM: false, completedE: false },
+];
+
+const initCustomers = [
+  { id: 1, name: "Mohammad Ashraf", address: "Ward 3, Near Mosque",   morning: true,  evening: true,  paid: true,  balance: 0   },
+  { id: 2, name: "Fatima Begum",    address: "Lane 5, Old Town",       morning: true,  evening: false, paid: false, balance: 140 },
+  { id: 3, name: "Ghulam Nabi",     address: "Main Chowk, Shop 12",   morning: false, evening: true,  paid: true,  balance: 0   },
+  { id: 4, name: "Rukhsana Jan",    address: "Colony B, House 7",     morning: true,  evening: true,  paid: false, balance: 280 },
+];
+
+const scaleData = [10,50,100,250,500,1000,2500,5000].map(n => ({
+  boys: n, label: n >= 1000 ? (n/1000)+"K" : String(n),
+  revenue: n * BOY_REV * 30 / 100000,
+  net: Math.max(0, n * NET_PER_BOY / 100000),
+}));
+
+const growthData = Array.from({ length: 12 }, (_, i) => ({
+  month: ["J","F","M","A","M","J","J","A","S","O","N","D"][i],
+  boys: Math.round(10 + i * 90),
+  profit: Math.round((10 + i * 90) * NET_PER_BOY / 1000),
+}));
+
+// ── Simple inline SVG chart components (no external chart library needed) ──
+function AreaChartSimple({ data, dataKey, xKey, color, height = 150 }) {
+  const w = 320, h = height, pad = 20;
+  const vals = data.map(d => d[dataKey]);
+  const max = Math.max(...vals) * 1.1 || 1;
+  const stepX = (w - pad * 2) / (data.length - 1);
+  const points = data.map((d, i) => {
+    const x = pad + i * stepX;
+    const y = h - pad - (d[dataKey] / max) * (h - pad * 2);
+    return [x, y];
+  });
+  const pathLine = points.map((p, i) => (i === 0 ? "M" : "L") + p[0] + "," + p[1]).join(" ");
+  const pathArea = pathLine + ` L${points[points.length-1][0]},${h-pad} L${points[0][0]},${h-pad} Z`;
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={height}>
+      <defs>
+        <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={color} stopOpacity="0.35" />
+          <stop offset="100%" stopColor={color} stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={pathArea} fill="url(#areaGrad)" />
+      <path d={pathLine} fill="none" stroke={color} strokeWidth="2" />
+      {data.map((d, i) => (
+        <text key={i} x={pad + i * stepX} y={h - 4} fontSize="8" fill={T.muted} textAnchor="middle" fontFamily="monospace">{d[xKey]}</text>
+      ))}
+    </svg>
+  );
+}
+
+function BarChartSimple({ data, keys, colors, xKey, height = 160 }) {
+  const w = 320, h = height, pad = 22;
+  const max = Math.max(...data.flatMap(d => keys.map(k => d[k]))) * 1.15 || 1;
+  const groupW = (w - pad * 2) / data.length;
+  const barW = groupW / (keys.length + 1);
+  return (
+    <svg viewBox={`0 0 ${w} ${h}`} width="100%" height={height}>
+      {data.map((d, i) => (
+        <g key={i}>
+          {keys.map((k, j) => {
+            const barH = (d[k] / max) * (h - pad * 2);
+            const x = pad + i * groupW + j * barW + barW * 0.15;
+            const y = h - pad - barH;
+            return <rect key={k} x={x} y={y} width={barW * 0.7} height={barH} fill={colors[j]} rx="2" />;
+          })}
+          <text x={pad + i * groupW + groupW / 2} y={h - 5} fontSize="8" fill={T.muted} textAnchor="middle" fontFamily="monospace">{d[xKey]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
+const GS_STYLE = `
+  *{box-sizing:border-box;margin:0;padding:0;}
+  ::-webkit-scrollbar{width:3px;}
+  ::-webkit-scrollbar-thumb{background:${T.border};border-radius:4px;}
+  input[type=range]{accent-color:${T.gold};width:100%;cursor:pointer;}
+`;
+
+const Card = ({ children, style = {}, glow }) => (
+  <div style={{
+    background: T.card, border: `1px solid ${glow ? T.gold + "66" : T.border}`,
+    borderRadius: 18, padding: 18, animation: "fadeUp .3s ease both",
+    boxShadow: glow ? `0 0 28px ${T.gold}18` : "none", ...style,
+  }}>{children}</div>
+);
+
+const Lbl = ({ children }) => (
+  <div style={{ fontSize: 10, color: T.muted, letterSpacing: 2.5, textTransform: "uppercase", fontFamily: "monospace", marginBottom: 8 }}>{children}</div>
+);
+
+const Tag = ({ children, color = T.gold }) => (
+  <span style={{ background: color + "1a", color, border: `1px solid ${color}33`, borderRadius: 20, fontSize: 10, fontWeight: 700, padding: "3px 10px", fontFamily: "monospace", letterSpacing: 0.5, whiteSpace: "nowrap" }}>{children}</span>
+);
+
+const Btn = ({ children, onClick, color = T.gold, outline, small, full, style: s = {} }) => (
+  <button onClick={onClick} style={{
+    background: outline ? "transparent" : color, color: outline ? color : T.bg,
+    border: `1px solid ${color}`, borderRadius: 10,
+    padding: small ? "6px 14px" : "11px 18px",
+    fontWeight: 700, fontSize: small ? 11 : 13, cursor: "pointer",
+    fontFamily: "'Sora', sans-serif", letterSpacing: 0.3, transition: "all .15s",
+    width: full ? "100%" : "auto", ...s,
+  }}>{children}</button>
+);
+
+const Input = ({ value, onChange, placeholder, type = "text" }) => (
+  <input type={type} value={value} onChange={onChange} placeholder={placeholder}
+    style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.cream, borderRadius: 10, padding: "10px 14px", fontSize: 13, width: "100%", outline: "none", fontFamily: "'Sora', sans-serif" }}
+    onFocus={e => e.target.style.borderColor = T.gold}
+    onBlur={e => e.target.style.borderColor = T.border}
+  />
+);
+
+const Toggle = ({ checked, onChange }) => (
+  <div onClick={() => onChange(!checked)} style={{ width: 42, height: 24, borderRadius: 12, background: checked ? T.green : T.border, position: "relative", cursor: "pointer", transition: "background .2s", flexShrink: 0 }}>
+    <div style={{ width: 18, height: 18, borderRadius: "50%", background: T.cream, position: "absolute", top: 3, left: checked ? 21 : 3, transition: "left .2s" }} />
+  </div>
+);
+
+const Row = ({ label, value, color, bold, last }) => (
+  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: last ? "none" : `1px solid ${T.border}` }}>
+    <span style={{ fontSize: 13, color: T.creamDim }}>{label}</span>
+    <span style={{ fontSize: 13, fontWeight: bold ? 700 : 500, color: color || T.cream, fontFamily: "monospace" }}>{value}</span>
+  </div>
+);
+
+const Toast = ({ msg }) => msg ? (
+  <div style={{ position: "fixed", bottom: 90, left: "50%", transform: "translateX(-50%)", background: T.green, color: T.bg, padding: "10px 22px", borderRadius: 24, fontWeight: 700, fontSize: 13, fontFamily: "monospace", zIndex: 999, boxShadow: `0 4px 24px ${T.green}44`, animation: "fadeUp .2s ease", whiteSpace: "nowrap" }}>{msg}</div>
+) : null;
+
+function Nav({ tabs, active, onChange }) {
+  return (
+    <div style={{ position: "fixed", bottom: 0, left: "50%", transform: "translateX(-50%)", width: "100%", maxWidth: 480, background: T.surface, borderTop: `1px solid ${T.border}`, display: "flex", padding: "8px 8px 18px", zIndex: 50 }}>
+      {tabs.map(([key, icon, label]) => (
+        <button key={key} onClick={() => onChange(key)} style={{ flex: 1, background: "none", border: "none", cursor: "pointer", color: active === key ? T.gold : T.muted, display: "flex", flexDirection: "column", alignItems: "center", gap: 2, transition: "color .15s" }}>
+          <span style={{ fontSize: 20, lineHeight: 1 }}>{icon}</span>
+          <span style={{ fontSize: 9, fontFamily: "monospace", letterSpacing: 1, fontWeight: active === key ? 700 : 400 }}>{label}</span>
+          {active === key && <div style={{ width: 16, height: 2, background: T.gold, borderRadius: 2 }} />}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function Header({ title, sub, color, onBack, right }) {
+  return (
+    <div style={{ padding: "18px 18px 14px", borderBottom: `1px solid ${T.border}`, display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, background: T.bg, zIndex: 40 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+        <span style={{ fontSize: 24 }}>🍞</span>
+        <div>
+          <div style={{ fontSize: 18, fontWeight: 700, color: color || T.gold, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>{title}</div>
+          <div style={{ fontSize: 9, color: T.muted, letterSpacing: 2, fontFamily: "monospace" }}>{sub}</div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+        {right}
+        <button onClick={onBack} style={{ background: T.card, border: `1px solid ${T.border}`, color: T.creamDim, borderRadius: 8, padding: "5px 11px", cursor: "pointer", fontSize: 11, fontFamily: "monospace" }}>← Back</button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════ ROLE SELECT ══════════════════
+function RoleScreen({ onSelect }) {
+  const roles = [
+    { key: "owner",    icon: "👑", title: "Owner / Admin",   sub: "Full dashboard, analytics & scale projector", color: T.gold  },
+    { key: "boy",      icon: "🛵", title: "Delivery Boy",    sub: "Mark slots done, view route & earnings",       color: T.green },
+    { key: "customer", icon: "🏠", title: "Customer",        sub: "Order bread, track delivery & pay bills",      color: T.blue  },
+  ];
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, display: "flex", flexDirection: "column", justifyContent: "center", padding: 24, gap: 14 }}>
+      <div style={{ textAlign: "center", marginBottom: 10, animation: "fadeUp .4s ease" }}>
+        <div style={{ fontSize: 56, marginBottom: 10 }}>🍞</div>
+        <div style={{ fontSize: 36, fontWeight: 700, color: T.gold, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>BreadBiz</div>
+        <div style={{ fontSize: 11, color: T.muted, letterSpacing: 3, textTransform: "uppercase", fontFamily: "monospace", marginTop: 6 }}>Delivery Management System</div>
+      </div>
+      <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "14px 18px", display: "flex", justifyContent: "space-around", animation: "fadeUp .4s .1s ease both" }}>
+        {[["₹70×2","Per Home/Day"],["21 Homes","Per Boy"],["₹22K","Net/Boy/Mo"]].map(([v,l]) => (
+          <div key={l} style={{ textAlign: "center" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.gold, fontFamily: "'Cormorant Garamond', serif" }}>{v}</div>
+            <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1 }}>{l}</div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: T.creamDim, textAlign: "center", fontFamily: "monospace" }}>Select your role</div>
+      {roles.map((r, i) => (
+        <div key={r.key} onClick={() => onSelect(r.key)}
+          style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 18, padding: "18px 20px", cursor: "pointer", display: "flex", alignItems: "center", gap: 16, animation: `fadeUp .35s ${0.15 + i * 0.08}s ease both` }}
+        >
+          <div style={{ fontSize: 36, flexShrink: 0 }}>{r.icon}</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 17, fontWeight: 700, color: r.color, fontFamily: "'Cormorant Garamond', serif" }}>{r.title}</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{r.sub}</div>
+          </div>
+          <div style={{ color: T.muted, fontSize: 20 }}>›</div>
+        </div>
+      ))}
+      <div style={{ textAlign: "center", fontSize: 10, color: T.muted, fontFamily: "monospace" }}>BreadBiz v2.0 · Built with 🍞</div>
+    </div>
+  );
+}
+
+// ══════════════════ OWNER ══════════════════
+function OwnerApp({ boys, setBoys, customers, setCustomers, onBack }) {
+  const [tab, setTab]   = useState("dash");
+  const [toast, setToast] = useState(null);
+  const [scale, setScale] = useState(1000);
+  const [salary, setSalary] = useState("initial");
+  const [showAdd, setShowAdd] = useState(false);
+  const [nName, setNName] = useState("");
+  const [nArea, setNArea] = useState("");
+
+  const T2 = (m) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  const activeBoys   = boys.filter(b => b.active);
+  const dailyRev     = activeBoys.reduce((s, b) => s + b.morning + b.evening, 0);
+  const curSal       = salary === "initial" ? SALARY_INIT : SALARY_LATER;
+  const monthlyNet   = dailyRev * MARGIN * 30 - activeBoys.length * curSal;
+  const pendingTotal = customers.filter(c => !c.paid).reduce((s, c) => s + c.balance, 0);
+
+  const scaleNet = scale * BOY_REV * MARGIN * 30 - scale * curSal;
+  const scaleRev = scale * BOY_REV * 30;
+
+  const addBoy = () => {
+    if (!nName.trim()) return;
+    setBoys(p => [...p, { id: Date.now(), name: nName.trim(), area: nArea || "New Area", morning: 1500, evening: 1500, active: true, completedM: false, completedE: false }]);
+    setNName(""); setNArea(""); setShowAdd(false); T2("✓ Delivery boy added");
+  };
+
+  const Tabs = [["dash","📊","Dashboard"],["boys","🛵","Boys"],["cust","🏠","Customers"],["scale","📈","Scale"]];
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.cream, fontFamily: "'Sora', sans-serif", maxWidth: 480, margin: "0 auto", paddingBottom: 90 }}>
+      <Header title="BreadBiz Owner" sub="ADMIN PANEL" onBack={onBack} right={<Tag color={T.green}>{activeBoys.length} Active</Tag>} />
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+
+        {tab === "dash" && <>
+          <div style={{ background: `linear-gradient(135deg, ${T.goldDim}, ${T.gold})`, borderRadius: 20, padding: "24px 22px", position: "relative", overflow: "hidden" }}>
+            <div style={{ fontSize: 10, color: T.bg, fontFamily: "monospace", letterSpacing: 2, opacity: 0.8, marginBottom: 6 }}>NET MONTHLY PROFIT</div>
+            <div style={{ fontSize: 46, fontWeight: 700, color: T.bg, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>{fmt(monthlyNet)}</div>
+            <div style={{ fontSize: 12, color: T.bg, opacity: 0.7, marginTop: 6 }}>{activeBoys.length} boys · {activeBoys.length * HOMES_PER_BOY} homes · {fmt(pendingTotal)} pending</div>
+          </div>
+
+          <Card>
+            <Lbl>Salary Stage</Lbl>
+            <div style={{ display: "flex", gap: 8 }}>
+              {[["initial", "Initial  ₹5,000"], ["later", "Later  ₹9,300"]].map(([v, l]) => (
+                <button key={v} onClick={() => setSalary(v)} style={{ flex: 1, padding: "9px 8px", borderRadius: 10, cursor: "pointer", background: salary === v ? T.gold : T.surface, color: salary === v ? T.bg : T.muted, border: `1px solid ${salary === v ? T.gold : T.border}`, fontWeight: 700, fontSize: 11, fontFamily: "monospace" }}>{l}</button>
+              ))}
+            </div>
+          </Card>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              ["Daily Revenue",   fmt(dailyRev),             T.cream, "All active boys"],
+              ["Daily Profit",    fmt(dailyRev * MARGIN),    T.green, "30% margin"],
+              ["Monthly Gross",   fmt(dailyRev * MARGIN*30), T.gold,  "×30 days"],
+              ["Monthly Salaries",fmt(activeBoys.length*curSal), T.red, `${activeBoys.length} boys`],
+            ].map(([l, v, c, s]) => (
+              <Card key={l} style={{ padding: "14px 16px" }}>
+                <Lbl>{l}</Lbl>
+                <div style={{ fontSize: 22, fontWeight: 700, color: c, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1.1 }}>{v}</div>
+                <div style={{ fontSize: 10, color: T.muted, marginTop: 4, fontFamily: "monospace" }}>{s}</div>
+              </Card>
+            ))}
+          </div>
+
+          <Card>
+            <Lbl>Business Model — Per Boy</Lbl>
+            <Row label="Bread price per slot"      value={`₹${BREAD_PRICE}`} />
+            <Row label="Slots per home per day"    value="2 (Morning + Evening)" />
+            <Row label="Revenue per home/day"      value={`₹${BREAD_PRICE * 2}`} />
+            <Row label="Homes per boy"             value={`~${HOMES_PER_BOY} homes`} />
+            <Row label="Daily revenue per boy"     value="₹3,000" />
+            <Row label="Daily profit (30%)"        value="₹900"      color={T.green} />
+            <Row label="Monthly revenue"           value="₹90,000" />
+            <Row label="Monthly gross profit"      value="₹27,000"   color={T.green} />
+            <Row label="Salary (initial)"          value="−₹5,000"   color={T.red} />
+            <Row label="Net profit per boy/month"  value="₹22,000"   color={T.gold} bold last />
+          </Card>
+
+          <Card>
+            <Lbl>Today — Slot Revenue</Lbl>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[["🌅","MORNING",activeBoys.reduce((s,b)=>s+b.morning,0),T.gold],["🌆","EVENING",activeBoys.reduce((s,b)=>s+b.evening,0),T.goldDim]].map(([ic,lbl,val,col]) => (
+                <div key={lbl} style={{ flex: 1, background: T.surface, borderRadius: 14, padding: 14, textAlign: "center", border: `1px solid ${T.border}` }}>
+                  <div style={{ fontSize: 22, marginBottom: 4 }}>{ic}</div>
+                  <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1 }}>{lbl}</div>
+                  <div style={{ fontSize: 22, fontWeight: 700, color: col, fontFamily: "'Cormorant Garamond', serif" }}>{fmt(val)}</div>
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          <Card>
+            <Lbl>12-Month Projection (₹K profit)</Lbl>
+            <div style={{ fontSize: 11, color: T.muted, marginBottom: 10, fontFamily: "monospace" }}>Hiring ~90 boys/month</div>
+            <AreaChartSimple data={growthData} dataKey="profit" xKey="month" color={T.gold} />
+          </Card>
+
+          {pendingTotal > 0 && (
+            <Card style={{ border: `1px solid ${T.red}44` }}>
+              <Lbl>Pending Collections — {fmt(pendingTotal)}</Lbl>
+              {customers.filter(c => !c.paid && c.balance > 0).map(c => (
+                <div key={c.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${T.border}` }}>
+                  <div>
+                    <div style={{ fontSize: 13, color: T.cream }}>{c.name}</div>
+                    <div style={{ fontSize: 10, color: T.muted }}>{c.address}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: T.red, fontFamily: "monospace" }}>₹{c.balance}</span>
+                    <Btn small onClick={() => { setCustomers(p => p.map(x => x.id === c.id ? {...x, paid: true, balance: 0} : x)); T2("✓ Collected"); }}>Collect</Btn>
+                  </div>
+                </div>
+              ))}
+            </Card>
+          )}
+        </>}
+
+        {tab === "boys" && <>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 12, color: T.muted, fontFamily: "monospace" }}>{boys.length} registered · {activeBoys.length} active</div>
+            <Btn small onClick={() => setShowAdd(!showAdd)}>+ Add Boy</Btn>
+          </div>
+          {showAdd && (
+            <Card style={{ border: `1px solid ${T.gold}44` }}>
+              <Lbl>New Delivery Boy</Lbl>
+              <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                <Input value={nName} onChange={e => setNName(e.target.value)} placeholder="Full name..." />
+                <Input value={nArea} onChange={e => setNArea(e.target.value)} placeholder="Area / Sector..." />
+                <div style={{ display: "flex", gap: 8 }}>
+                  <Btn onClick={addBoy} style={{ flex: 1 }}>Add</Btn>
+                  <Btn outline onClick={() => setShowAdd(false)} style={{ flex: 1 }}>Cancel</Btn>
+                </div>
+              </div>
+            </Card>
+          )}
+          {boys.map(b => {
+            const daily = b.morning + b.evening;
+            const net   = daily * MARGIN * 30 - SALARY_INIT;
+            return (
+              <Card key={b.id} style={{ opacity: b.active ? 1 : 0.5 }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: T.cream, fontFamily: "'Cormorant Garamond', serif" }}>{b.name}</div>
+                    <div style={{ fontSize: 11, color: T.muted, fontFamily: "monospace" }}>{b.area}</div>
+                  </div>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <Tag color={b.active ? T.green : T.red}>{b.active ? "Active" : "Off"}</Tag>
+                    <Toggle checked={b.active} onChange={v => setBoys(p => p.map(x => x.id === b.id ? {...x, active: v} : x))} />
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 8, marginBottom: 12 }}>
+                  {[["Daily Rev", fmt(daily), T.cream],["Gross/Mo", fmt(daily*MARGIN*30), T.green],["Net/Mo", fmt(Math.max(0,net)), T.gold]].map(([l,v,c]) => (
+                    <div key={l} style={{ background: T.surface, borderRadius: 10, padding: "10px 6px", textAlign: "center", border: `1px solid ${T.border}` }}>
+                      <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1, marginBottom: 2 }}>{l}</div>
+                      <div style={{ fontSize: 14, fontWeight: 700, color: c, fontFamily: "'Cormorant Garamond', serif" }}>{v}</div>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+                  {[["morning","🌅 Morning"],["evening","🌆 Evening"]].map(([slot, lbl]) => (
+                    <div key={slot}>
+                      <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1, marginBottom: 5 }}>{lbl} (₹)</div>
+                      <input type="number" value={b[slot]} min={0} step={50}
+                        onChange={e => setBoys(p => p.map(x => x.id === b.id ? {...x, [slot]: Number(e.target.value)} : x))}
+                        style={{ background: T.surface, border: `1px solid ${T.border}`, color: T.cream, borderRadius: 8, padding: "8px 10px", fontSize: 13, width: "100%", fontFamily: "monospace", outline: "none" }}
+                      />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                  {[["completedM","🌅 Morning"],["completedE","🌆 Evening"]].map(([k,lbl]) => (
+                    <div key={k} style={{ flex: 1, background: b[k] ? T.greenSoft : T.surface, border: `1px solid ${b[k] ? T.green : T.border}`, borderRadius: 8, padding: "7px", textAlign: "center", fontSize: 11, color: b[k] ? T.green : T.muted, fontFamily: "monospace" }}>
+                      {b[k] ? `✓ ${lbl} Done` : `${lbl} Pending`}
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            );
+          })}
+        </>}
+
+        {tab === "cust" && <>
+          <div style={{ display: "flex", gap: 10, marginBottom: 4 }}>
+            {[["Total", customers.length, T.cream],["Subscribed", customers.filter(c=>c.morning||c.evening).length, T.green],["Dues", customers.filter(c=>!c.paid).length, T.red]].map(([l,v,c]) => (
+              <div key={l} style={{ flex: 1, background: T.card, border: `1px solid ${T.border}`, borderRadius: 14, padding: "12px 8px", textAlign: "center" }}>
+                <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1 }}>{l}</div>
+                <div style={{ fontSize: 24, fontWeight: 700, color: c, fontFamily: "'Cormorant Garamond', serif" }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          {customers.map(c => (
+            <Card key={c.id}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.cream, fontFamily: "'Cormorant Garamond', serif" }}>{c.name}</div>
+                  <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>{c.address}</div>
+                </div>
+                <Tag color={c.paid ? T.green : T.red}>{c.paid ? "Paid" : `₹${c.balance} due`}</Tag>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+                {[["morning","🌅 Morning"],["evening","🌆 Evening"]].map(([slot, lbl]) => (
+                  <div key={slot} style={{ flex: 1, background: c[slot] ? T.greenSoft : T.surface, border: `1px solid ${c[slot] ? T.green : T.border}`, borderRadius: 8, padding: "8px", textAlign: "center", fontSize: 11, color: c[slot] ? T.green : T.muted, fontFamily: "monospace" }}>
+                    {lbl} {c[slot] ? "✓" : "✗"}
+                  </div>
+                ))}
+                <div style={{ background: T.surface, border: `1px solid ${T.border}`, borderRadius: 8, padding: "8px 10px", fontSize: 11, color: T.gold, fontFamily: "monospace", display: "flex", alignItems: "center" }}>
+                  ₹{(c.morning ? BREAD_PRICE : 0) + (c.evening ? BREAD_PRICE : 0)}/day
+                </div>
+              </div>
+              {!c.paid && c.balance > 0 && (
+                <Btn full onClick={() => { setCustomers(p => p.map(x => x.id === c.id ? {...x, paid: true, balance: 0} : x)); T2("✓ Payment collected"); }}>
+                  Collect ₹{c.balance}
+                </Btn>
+              )}
+            </Card>
+          ))}
+        </>}
+
+        {tab === "scale" && <>
+          <Card glow>
+            <Lbl>Delivery Boys</Lbl>
+            <div style={{ fontSize: 48, fontWeight: 700, color: T.gold, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1, marginBottom: 10 }}>{scale.toLocaleString()}</div>
+            <input type="range" min={1} max={10000} step={50} value={scale} onChange={e => setScale(Number(e.target.value))} />
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 9, color: T.muted, fontFamily: "monospace", marginTop: 4 }}>
+              {["1","2,500","5,000","7,500","10,000"].map(v => <span key={v}>{v}</span>)}
+            </div>
+          </Card>
+
+          <div style={{ background: `linear-gradient(135deg, #0f2a14, #152e18)`, border: `1px solid ${T.green}44`, borderRadius: 20, padding: "24px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: T.green, fontFamily: "monospace", letterSpacing: 2 }}>MONTHLY NET PROFIT</div>
+            <div style={{ fontSize: 52, fontWeight: 700, color: T.green, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>{fmt(scaleNet)}</div>
+            <div style={{ fontSize: 12, color: T.creamDim, marginTop: 8 }}>{scale.toLocaleString()} boys · {(scale * HOMES_PER_BOY).toLocaleString()} homes served daily</div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              ["Daily Revenue",   fmt(scale * BOY_REV),           T.cream],
+              ["Monthly Revenue", fmt(scaleRev),                   T.gold],
+              ["Gross Profit",    fmt(scaleRev * MARGIN),          T.green],
+              ["Salary Bill",     fmt(scale * curSal),             T.red],
+            ].map(([l, v, c]) => (
+              <Card key={l} style={{ padding: "14px 16px" }}>
+                <Lbl>{l}</Lbl>
+                <div style={{ fontSize: 20, fontWeight: 700, color: c, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1.1 }}>{v}</div>
+              </Card>
+            ))}
+          </div>
+
+          <Card>
+            <Lbl>Revenue vs Net Profit (₹L)</Lbl>
+            <BarChartSimple data={scaleData} keys={["revenue","net"]} colors={[T.gold + "77", T.green]} xKey="label" />
+          </Card>
+
+          <Card>
+            <Lbl>Milestones</Lbl>
+            {[10,50,100,500,1000,5000,10000].map(n => {
+              const net = n * BOY_REV * MARGIN * 30 - n * curSal;
+              const reached = scale >= n;
+              return (
+                <div key={n} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${T.border}`, background: reached ? T.gold+"08" : "transparent" }}>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <span style={{ fontSize: 12, color: reached ? T.gold : T.muted, fontFamily: "monospace", fontWeight: reached ? 700 : 400 }}>{n.toLocaleString()} boys</span>
+                    {reached && <Tag color={T.gold}>✓</Tag>}
+                  </div>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.green, fontFamily: "monospace" }}>{fmt(Math.max(0, net))}/mo</span>
+                </div>
+              );
+            })}
+          </Card>
+
+          <Card style={{ border: `1px solid ${T.blue}33` }}>
+            <Lbl>Business Formula</Lbl>
+            <div style={{ fontSize: 12, color: T.creamDim, lineHeight: 2, fontFamily: "monospace" }}>
+              🏠 ₹70 × 2 = ₹140 / home / day<br/>
+              🛵 21 homes × ₹140 = ₹3,000 / boy / day<br/>
+              📦 ₹3,000 × 30% = ₹900 profit / day<br/>
+              💰 ₹900 × 30 − ₹5,000 = ₹22,000 / boy / month<br/>
+              📈 1,000 boys = {fmt(1000 * NET_PER_BOY)} / month
+            </div>
+          </Card>
+        </>}
+      </div>
+      <Nav tabs={Tabs} active={tab} onChange={setTab} />
+      <Toast msg={toast} />
+    </div>
+  );
+}
+
+// ══════════════════ DELIVERY BOY ══════════════════
+function BoyApp({ boys, setBoys, customers, onBack }) {
+  const [sel, setSel] = useState(null);
+  const [tab, setTab] = useState("delivery");
+  const [toast, setToast] = useState(null);
+  const T2 = (m) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  if (!sel) return (
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.cream, fontFamily: "'Sora', sans-serif", maxWidth: 480, margin: "0 auto", padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.green, fontFamily: "'Cormorant Garamond', serif" }}>🛵 Delivery Login</div>
+          <div style={{ fontSize: 10, color: T.muted, letterSpacing: 2, fontFamily: "monospace" }}>SELECT YOUR NAME</div>
+        </div>
+        <button onClick={onBack} style={{ background: T.card, border: `1px solid ${T.border}`, color: T.creamDim, borderRadius: 8, padding: "5px 11px", cursor: "pointer", fontSize: 11, fontFamily: "monospace" }}>← Back</button>
+      </div>
+      {boys.filter(b => b.active).map((b, i) => (
+        <div key={b.id} onClick={() => setSel(b.id)}
+          style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, marginBottom: 10, animation: `fadeUp .3s ${i*.07}s ease both` }}
+        >
+          <div style={{ width: 44, height: 44, borderRadius: "50%", background: T.green+"22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🛵</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: T.cream, fontFamily: "'Cormorant Garamond', serif" }}>{b.name}</div>
+            <div style={{ fontSize: 11, color: T.muted, fontFamily: "monospace" }}>{b.area} · {HOMES_PER_BOY} homes</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: T.gold, fontFamily: "monospace" }}>{fmt(b.morning + b.evening)}</div>
+            <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace" }}>today</div>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+
+  const boy = boys.find(b => b.id === sel);
+  if (!boy) return null;
+  const daily      = boy.morning + boy.evening;
+  const todayEarned = (boy.completedM ? boy.morning * MARGIN : 0) + (boy.completedE ? boy.evening * MARGIN : 0);
+  const mark = (k) => { setBoys(p => p.map(b => b.id === boy.id ? {...b, [k]: true} : b)); T2(k === "completedM" ? "✓ Morning done!" : "✓ Evening done!"); };
+
+  const Tabs = [["delivery","📦","Delivery"],["earnings","💰","Earnings"],["route","🗺️","Route"]];
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.cream, fontFamily: "'Sora', sans-serif", maxWidth: 480, margin: "0 auto", paddingBottom: 90 }}>
+      <Header title={boy.name} sub={`${boy.area} · DELIVERY BOY`} color={T.green} onBack={() => setSel(null)} right={<Tag color={T.green}>On Duty</Tag>} />
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+
+        {tab === "delivery" && <>
+          <Card glow={boy.completedM && boy.completedE}>
+            <Lbl>Today's Deliveries</Lbl>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[["🌅","MORNING","completedM",boy.morning,T.gold,"7:00–9:00 AM"],["🌆","EVENING","completedE",boy.evening,T.goldDim,"5:00–7:00 PM"]].map(([ic,lbl,k,rev,col,time]) => (
+                <div key={k} style={{ flex: 1, background: boy[k] ? T.greenSoft : T.surface, border: `1px solid ${boy[k] ? T.green : T.border}`, borderRadius: 14, padding: 16, textAlign: "center" }}>
+                  <div style={{ fontSize: 26, marginBottom: 4 }}>{ic}</div>
+                  <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1 }}>{lbl}</div>
+                  <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", marginBottom: 6 }}>{time}</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, color: col, fontFamily: "'Cormorant Garamond', serif", marginBottom: 12 }}>{fmt(rev)}</div>
+                  {boy[k] ? <div style={{ fontSize: 12, color: T.green, fontWeight: 700 }}>✓ DONE</div> : <Btn small full onClick={() => mark(k)} color={T.green}>Mark Done</Btn>}
+                </div>
+              ))}
+            </div>
+          </Card>
+
+          {boy.completedM && boy.completedE && (
+            <div style={{ background: T.greenSoft, border: `1px solid ${T.green}`, borderRadius: 16, padding: 20, textAlign: "center", animation: "fadeUp .3s ease" }}>
+              <div style={{ fontSize: 36, marginBottom: 6 }}>🎉</div>
+              <div style={{ fontSize: 18, fontWeight: 700, color: T.green, fontFamily: "'Cormorant Garamond', serif" }}>All deliveries done!</div>
+              <div style={{ fontSize: 12, color: T.creamDim, marginTop: 4 }}>Great work, {boy.name.split(" ")[0]}!</div>
+            </div>
+          )}
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(3,1fr)", gap: 10 }}>
+            {[["Homes", HOMES_PER_BOY, T.cream],["Today Rev", fmt(daily), T.gold],["Earned", fmt(todayEarned), T.green]].map(([l,v,c]) => (
+              <Card key={l} style={{ padding: "12px 8px", textAlign: "center" }}>
+                <Lbl>{l}</Lbl>
+                <div style={{ fontSize: 17, fontWeight: 700, color: c, fontFamily: "'Cormorant Garamond', serif" }}>{v}</div>
+              </Card>
+            ))}
+          </div>
+
+          <Card>
+            <Lbl>Bread Price Per Home</Lbl>
+            <Row label="Morning — 1 loaf" value={`₹${BREAD_PRICE}`} />
+            <Row label="Evening — 1 loaf" value={`₹${BREAD_PRICE}`} />
+            <Row label="Per home per day" value={`₹${BREAD_PRICE * 2}`} color={T.gold} bold last />
+          </Card>
+        </>}
+
+        {tab === "earnings" && <>
+          <div style={{ background: `linear-gradient(135deg, ${T.goldDim}aa, ${T.gold})`, borderRadius: 20, padding: "24px 20px" }}>
+            <div style={{ fontSize: 10, color: T.bg, fontFamily: "monospace", letterSpacing: 2, opacity: 0.8 }}>YOUR MONTHLY SALARY</div>
+            <div style={{ fontSize: 46, fontWeight: 700, color: T.bg, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>₹{SALARY_INIT.toLocaleString()}</div>
+            <div style={{ fontSize: 12, color: T.bg, opacity: 0.7, marginTop: 4 }}>Fixed · Paid on 1st of month</div>
+          </div>
+          <Card>
+            <Lbl>Your Monthly Breakdown</Lbl>
+            <Row label="Daily revenue you collect" value={fmt(daily)} />
+            <Row label="Company profit (30%)"     value={fmt(daily * MARGIN)} color={T.green} />
+            <Row label="Your fixed salary"         value={`₹${SALARY_INIT.toLocaleString()}`} color={T.gold} />
+            <Row label="Your daily salary"         value={`₹${Math.round(SALARY_INIT/30)}`} />
+            <Row label="Revenue per home/day"      value={`₹${BREAD_PRICE * 2}`} last bold />
+          </Card>
+          <Card>
+            <Lbl>Monthly Activity</Lbl>
+            <Row label="Working days"       value="30" />
+            <Row label="Morning deliveries" value={`${HOMES_PER_BOY * 30}`} />
+            <Row label="Evening deliveries" value={`${HOMES_PER_BOY * 30}`} />
+            <Row label="Total deliveries"   value={`${HOMES_PER_BOY * 60}`} />
+            <Row label="Revenue collected"  value="₹90,000" color={T.gold} bold last />
+          </Card>
+        </>}
+
+        {tab === "route" && (
+          <Card>
+            <Lbl>Your Route — {boy.area}</Lbl>
+            <div style={{ fontSize: 11, color: T.muted, marginBottom: 14, fontFamily: "monospace" }}>~{HOMES_PER_BOY} homes · morning & evening</div>
+            {customers.map((c, i) => i < HOMES_PER_BOY && (
+              <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 0", borderBottom: `1px solid ${T.border}` }}>
+                <div style={{ width: 28, height: 28, borderRadius: "50%", background: T.gold+"22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: 700, color: T.gold, fontFamily: "monospace", flexShrink: 0 }}>{i+1}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.cream }}>{c.name}</div>
+                  <div style={{ fontSize: 10, color: T.muted }}>{c.address}</div>
+                </div>
+                <div style={{ textAlign: "right" }}>
+                  <div style={{ fontSize: 12, color: T.gold, fontFamily: "monospace" }}>₹{(c.morning?BREAD_PRICE:0)+(c.evening?BREAD_PRICE:0)}</div>
+                  <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace" }}>/day</div>
+                </div>
+              </div>
+            ))}
+            <div style={{ padding: "12px 0", display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 12, color: T.muted, fontFamily: "monospace" }}>Route total / day</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: T.gold, fontFamily: "monospace" }}>{fmt(daily)}</span>
+            </div>
+          </Card>
+        )}
+      </div>
+      <Nav tabs={Tabs} active={tab} onChange={setTab} />
+      <Toast msg={toast} />
+    </div>
+  );
+}
+
+// ══════════════════ CUSTOMER ══════════════════
+function CustomerApp({ customers, setCustomers, boys, onBack }) {
+  const [sel, setSel]        = useState(null);
+  const [tab, setTab]        = useState("home");
+  const [toast, setToast]    = useState(null);
+  const [showReg, setShowReg] = useState(false);
+  const [nName, setNName]    = useState("");
+  const [nAddr, setNAddr]    = useState("");
+  const [nMorn, setNMorn]    = useState(true);
+  const [nEve, setNEve]      = useState(false);
+  const T2 = (m) => { setToast(m); setTimeout(() => setToast(null), 2500); };
+
+  if (!sel && !showReg) return (
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.cream, fontFamily: "'Sora', sans-serif", maxWidth: 480, margin: "0 auto", padding: 20 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700, color: T.blue, fontFamily: "'Cormorant Garamond', serif" }}>🏠 Customer Portal</div>
+          <div style={{ fontSize: 10, color: T.muted, letterSpacing: 2, fontFamily: "monospace" }}>SELECT YOUR ACCOUNT</div>
+        </div>
+        <button onClick={onBack} style={{ background: T.card, border: `1px solid ${T.border}`, color: T.creamDim, borderRadius: 8, padding: "5px 11px", cursor: "pointer", fontSize: 11, fontFamily: "monospace" }}>← Back</button>
+      </div>
+      {customers.map((c, i) => (
+        <div key={c.id} onClick={() => setSel(c.id)}
+          style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 16, padding: "16px 18px", cursor: "pointer", display: "flex", alignItems: "center", gap: 14, marginBottom: 10, animation: `fadeUp .3s ${i*.07}s ease both` }}
+        >
+          <div style={{ width: 44, height: 44, borderRadius: "50%", background: T.blue+"22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 22 }}>🏠</div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.cream, fontFamily: "'Cormorant Garamond', serif" }}>{c.name}</div>
+            <div style={{ fontSize: 11, color: T.muted }}>{c.address}</div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" }}>
+            <Tag color={c.paid ? T.green : T.red}>{c.paid ? "Paid" : `₹${c.balance} due`}</Tag>
+            <div style={{ fontSize: 10, color: T.muted, fontFamily: "monospace" }}>₹{((c.morning?BREAD_PRICE:0)+(c.evening?BREAD_PRICE:0))*30}/mo</div>
+          </div>
+        </div>
+      ))}
+      <button onClick={() => setShowReg(true)} style={{ width: "100%", background: "transparent", border: `1px dashed ${T.blue}55`, borderRadius: 16, padding: 16, cursor: "pointer", color: T.blue, fontSize: 13, fontFamily: "'Sora', sans-serif", fontWeight: 600 }}>
+        + New Customer Registration
+      </button>
+      <Toast msg={toast} />
+    </div>
+  );
+
+  if (showReg) {
+    const register = () => {
+      if (!nName.trim()) return;
+      setCustomers(p => [...p, { id: Date.now(), name: nName.trim(), address: nAddr || "Address not provided", morning: nMorn, evening: nEve, paid: true, balance: 0 }]);
+      setNName(""); setNAddr(""); setShowReg(false); T2("✓ Registered successfully!");
+    };
+    return (
+      <div style={{ minHeight: "100vh", background: T.bg, color: T.cream, fontFamily: "'Sora', sans-serif", maxWidth: 480, margin: "0 auto", padding: 20 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div style={{ fontSize: 18, fontWeight: 700, color: T.blue, fontFamily: "'Cormorant Garamond', serif" }}>New Registration</div>
+          <button onClick={() => setShowReg(false)} style={{ background: T.card, border: `1px solid ${T.border}`, color: T.creamDim, borderRadius: 8, padding: "5px 11px", cursor: "pointer", fontSize: 11, fontFamily: "monospace" }}>← Back</button>
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <Card><Lbl>Full Name</Lbl><Input value={nName} onChange={e => setNName(e.target.value)} placeholder="Your full name..." /></Card>
+          <Card><Lbl>Address</Lbl><Input value={nAddr} onChange={e => setNAddr(e.target.value)} placeholder="House no, area, landmark..." /></Card>
+          <Card>
+            <Lbl>Choose Delivery Slots</Lbl>
+            {[["morning","🌅 Morning Delivery","7:00 AM – 9:00 AM",nMorn,setNMorn],["evening","🌆 Evening Delivery","5:00 PM – 7:00 PM",nEve,setNEve]].map(([k,lbl,time,val,set]) => (
+              <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 0", borderBottom: `1px solid ${T.border}` }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.cream }}>{lbl}</div>
+                  <div style={{ fontSize: 11, color: T.muted, fontFamily: "monospace" }}>{time} · ₹{BREAD_PRICE}/day</div>
+                </div>
+                <Toggle checked={val} onChange={set} />
+              </div>
+            ))}
+            <div style={{ padding: "12px 0", display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 13, color: T.creamDim }}>Monthly cost</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: T.gold, fontFamily: "monospace" }}>₹{((nMorn?BREAD_PRICE:0)+(nEve?BREAD_PRICE:0))*30}</span>
+            </div>
+          </Card>
+          <Btn full onClick={register} style={{ padding: 14, fontSize: 15 }}>Register & Subscribe 🍞</Btn>
+        </div>
+        <Toast msg={toast} />
+      </div>
+    );
+  }
+
+  const cust = customers.find(c => c.id === sel);
+  if (!cust) return null;
+  const dailyAmt   = (cust.morning ? BREAD_PRICE : 0) + (cust.evening ? BREAD_PRICE : 0);
+  const monthlyAmt = dailyAmt * 30;
+  const assignedBoy = boys.find(b => b.active) || boys[0];
+
+  const Tabs = [["home","🏠","Home"],["order","🛒","Order"],["track","📍","Track"],["billing","💳","Billing"]];
+
+  return (
+    <div style={{ minHeight: "100vh", background: T.bg, color: T.cream, fontFamily: "'Sora', sans-serif", maxWidth: 480, margin: "0 auto", paddingBottom: 90 }}>
+      <Header title={cust.name} sub="CUSTOMER PORTAL" color={T.blue} onBack={() => setSel(null)} right={<Tag color={cust.paid ? T.green : T.red}>{cust.paid ? "Paid" : "Due"}</Tag>} />
+      <div style={{ padding: 16, display: "flex", flexDirection: "column", gap: 14 }}>
+
+        {tab === "home" && <>
+          <div style={{ background: `linear-gradient(135deg, #0e1f33, #142840)`, border: `1px solid ${T.blue}33`, borderRadius: 20, padding: "22px 20px" }}>
+            <div style={{ fontSize: 32, marginBottom: 8 }}>🍞</div>
+            <div style={{ fontSize: 22, fontWeight: 700, color: T.blue, fontFamily: "'Cormorant Garamond', serif" }}>Good morning!</div>
+            <div style={{ fontSize: 13, color: T.creamDim, marginTop: 4 }}>Your fresh bread is on its way, {cust.name.split(" ")[0]}</div>
+          </div>
+
+          <Card>
+            <Lbl>Today's Delivery Status</Lbl>
+            <div style={{ display: "flex", gap: 10 }}>
+              {[["🌅","MORNING","morning","completedM"],["🌆","EVENING","evening","completedE"]].map(([ic,lbl,slot,doneKey]) => {
+                const sub = !cust[slot];
+                const done = assignedBoy && assignedBoy[doneKey];
+                return (
+                  <div key={lbl} style={{ flex: 1, background: sub ? T.surface : (done ? T.greenSoft : T.goldSoft), border: `1px solid ${sub ? T.border : (done ? T.green : T.gold)}`, borderRadius: 12, padding: 14, textAlign: "center" }}>
+                    <div style={{ fontSize: 24, marginBottom: 4 }}>{ic}</div>
+                    <div style={{ fontSize: 9, color: T.muted, fontFamily: "monospace", letterSpacing: 1, marginBottom: 6 }}>{lbl}</div>
+                    {sub ? <div style={{ fontSize: 11, color: T.muted }}>Not subscribed</div> : done ? <div style={{ fontSize: 12, color: T.green, fontWeight: 700 }}>✓ Delivered</div> : <div style={{ fontSize: 12, color: T.gold }}>⏳ On the way</div>}
+                  </div>
+                );
+              })}
+            </div>
+          </Card>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+            {[
+              ["Daily Cost",    `₹${dailyAmt}`,                             T.gold],
+              ["Monthly Cost",  `₹${monthlyAmt}`,                           T.cream],
+              ["Slots Active",  `${[cust.morning,cust.evening].filter(Boolean).length} of 2`, T.blue],
+              ["Balance",       cust.balance > 0 ? `₹${cust.balance}` : "Clear", cust.balance > 0 ? T.red : T.green],
+            ].map(([l,v,c]) => (
+              <Card key={l} style={{ padding: "12px 14px" }}>
+                <Lbl>{l}</Lbl>
+                <div style={{ fontSize: 20, fontWeight: 700, color: c, fontFamily: "'Cormorant Garamond', serif" }}>{v}</div>
+              </Card>
+            ))}
+          </div>
+
+          {assignedBoy && (
+            <Card>
+              <Lbl>Your Delivery Boy</Lbl>
+              <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+                <div style={{ width: 48, height: 48, borderRadius: "50%", background: T.green+"22", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 24 }}>🛵</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.cream, fontFamily: "'Cormorant Garamond', serif" }}>{assignedBoy.name}</div>
+                  <div style={{ fontSize: 11, color: T.muted }}>{assignedBoy.area} · {HOMES_PER_BOY} homes on route</div>
+                </div>
+                <Tag color={T.green}>● On Duty</Tag>
+              </div>
+            </Card>
+          )}
+        </>}
+
+        {tab === "order" && <>
+          <Card>
+            <Lbl>My Subscription</Lbl>
+            {[["morning","🌅 Morning Delivery","7:00 AM – 9:00 AM"],["evening","🌆 Evening Delivery","5:00 PM – 7:00 PM"]].map(([slot,lbl,time]) => (
+              <div key={slot} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "14px 0", borderBottom: `1px solid ${T.border}` }}>
+                <div>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: T.cream }}>{lbl}</div>
+                  <div style={{ fontSize: 11, color: T.muted, fontFamily: "monospace" }}>{time} · ₹{BREAD_PRICE}/day · ₹{BREAD_PRICE*30}/month</div>
+                </div>
+                <Toggle checked={cust[slot]} onChange={() => { setCustomers(p => p.map(c => c.id === cust.id ? {...c, [slot]: !c[slot]} : c)); T2("✓ Preference updated"); }} />
+              </div>
+            ))}
+            <div style={{ paddingTop: 12, display: "flex", justifyContent: "space-between" }}>
+              <span style={{ fontSize: 13, color: T.creamDim }}>Monthly total</span>
+              <span style={{ fontSize: 15, fontWeight: 700, color: T.gold, fontFamily: "monospace" }}>₹{monthlyAmt}</span>
+            </div>
+          </Card>
+          <Card>
+            <Lbl>Cost Breakdown</Lbl>
+            <Row label="Per loaf price"     value={`₹${BREAD_PRICE}`} />
+            <Row label="Daily (both slots)" value={`₹${BREAD_PRICE * 2}`} />
+            <Row label="Monthly estimate"   value={`₹${monthlyAmt}`} color={T.gold} bold last />
+          </Card>
+          <Card style={{ background: T.goldSoft, border: `1px solid ${T.gold}33` }}>
+            <div style={{ fontSize: 12, color: T.creamDim, lineHeight: 2 }}>
+              🍞 Fresh bread delivered twice daily<br/>
+              🛵 Dedicated local delivery boy<br/>
+              📱 Track your delivery in real time<br/>
+              💰 Flexible weekly / monthly payment
+            </div>
+          </Card>
+        </>}
+
+        {tab === "track" && (
+          <Card>
+            <Lbl>Live Delivery Tracker</Lbl>
+            <div style={{ padding: "10px 0" }}>
+              {[
+                ["Subscription Active", "You are subscribed to BreadBiz", true],
+                ["Boy Dispatched", `${assignedBoy ? assignedBoy.name : "Boy"} started route`, true],
+                ["Morning Delivered", assignedBoy && assignedBoy.completedM ? "✓ Done" : "Pending...", !!(assignedBoy && assignedBoy.completedM)],
+                ["Evening Dispatched", "Expected 5:00 PM", false],
+                ["Evening Delivered", "Expected 6:30 PM", false],
+              ].map(([title, sub, done], i, arr) => (
+                <div key={i} style={{ display: "flex", gap: 14 }}>
+                  <div style={{ display: "flex", flexDirection: "column", alignItems: "center" }}>
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: done ? T.green : T.border, display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0 }}>{done ? "✓" : "○"}</div>
+                    {i < arr.length - 1 && <div style={{ width: 2, height: 34, background: done ? T.green + "55" : T.border, margin: "3px 0" }} />}
+                  </div>
+                  <div style={{ paddingTop: 4, paddingBottom: 22 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: done ? T.cream : T.muted }}>{title}</div>
+                    <div style={{ fontSize: 11, color: T.muted, fontFamily: "monospace" }}>{sub}</div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </Card>
+        )}
+
+        {tab === "billing" && <>
+          <div style={{ background: cust.paid ? `linear-gradient(135deg,#0d2a18,#152e1e)` : `linear-gradient(135deg,#2a0d0d,#2e1515)`, border: `1px solid ${cust.paid ? T.green : T.red}44`, borderRadius: 20, padding: "24px 20px", textAlign: "center" }}>
+            <div style={{ fontSize: 10, color: cust.paid ? T.green : T.red, fontFamily: "monospace", letterSpacing: 2 }}>ACCOUNT STATUS</div>
+            <div style={{ fontSize: 42, fontWeight: 700, color: cust.paid ? T.green : T.red, fontFamily: "'Cormorant Garamond', serif", lineHeight: 1 }}>{cust.paid ? "ALL CLEAR ✓" : `₹${cust.balance} DUE`}</div>
+            <div style={{ fontSize: 12, color: T.creamDim, marginTop: 6 }}>{cust.paid ? "All payments up to date" : "Please clear your balance"}</div>
+          </div>
+          <Card>
+            <Lbl>Current Bill</Lbl>
+            {cust.morning && <Row label="Morning bread × 30 days" value={`₹${BREAD_PRICE * 30}`} />}
+            {cust.evening && <Row label="Evening bread × 30 days" value={`₹${BREAD_PRICE * 30}`} />}
+            <Row label="Monthly total" value={`₹${monthlyAmt}`} color={T.gold} bold />
+            <Row label="Balance due" value={cust.balance > 0 ? `₹${cust.balance}` : "Nil"} color={cust.balance > 0 ? T.red : T.green} last />
+          </Card>
+          {cust.balance > 0 && (
+            <Btn full onClick={() => { setCustomers(p => p.map(c => c.id === cust.id ? {...c, paid: true, balance: 0} : c)); T2("✓ Payment successful!"); }} color={T.green} style={{ padding: 14, fontSize: 15 }}>
+              Pay ₹{cust.balance} Now
+            </Btn>
+          )}
+          <Card>
+            <Lbl>Payment History</Lbl>
+            {["May 2025","Apr 2025","Mar 2025","Feb 2025"].map((m, i) => (
+              <Row key={m} label={m} value={`₹${monthlyAmt}`} color={T.green} last={i===3} />
+            ))}
+          </Card>
+        </>}
+      </div>
+      <Nav tabs={Tabs} active={tab} onChange={setTab} />
+      <Toast msg={toast} />
+    </div>
+  );
+}
+
+// ══════════════════ ROOT ══════════════════
+function App() {
+  const [role, setRole]           = useState(null);
+  const [boys, setBoys]           = useState(initBoys);
+  const [customers, setCustomers] = useState(initCustomers);
+
+  useEffect(() => {
+    const styleTag = document.createElement("style");
+    styleTag.innerHTML = GS_STYLE + "@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}to{opacity:1;transform:translateY(0)}}";
+    document.head.appendChild(styleTag);
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("service-worker.js").catch(() => {});
+    }
+  }, []);
+
+  if (!role) return <RoleScreen onSelect={setRole} />;
+  if (role === "owner")    return <OwnerApp    boys={boys} setBoys={setBoys} customers={customers} setCustomers={setCustomers} onBack={() => setRole(null)} />;
+  if (role === "boy")      return <BoyApp      boys={boys} setBoys={setBoys} customers={customers} onBack={() => setRole(null)} />;
+  if (role === "customer") return <CustomerApp customers={customers} setCustomers={setCustomers} boys={boys} onBack={() => setRole(null)} />;
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(<App />);
+</script>
+</body>
+</html>
